@@ -15,20 +15,37 @@ private func callThreadExit() {
 private func sigIllHandler(code: Int32, info: UnsafeMutablePointer<siginfo_t>?, uap: UnsafeMutableRawPointer?) -> Void {
     guard let context = uap?.assumingMemoryBound(to: ucontext_t.self) else { return }
 
-    // 1. Decrement the stack pointer
-    context.pointee.uc_mcontext.gregs.15 /* REG_RSP */ -= Int64(MemoryLayout<Int>.size)
+    #if os(Linux)
+        // 1. Decrement the stack pointer
+        context.pointee.uc_mcontext.regs.15 /* REG_RSP */ -= UInt64(MemoryLayout<Int>.size)
 
-    // 2. Save the old Instruction Pointer to the stack.
-    let rsp = context.pointee.uc_mcontext.gregs.15 /* REG_RSP */
-    if let ump = UnsafeMutablePointer<Int64>(bitPattern: Int(rsp)) {
-        ump.pointee = rsp
-    }
+        // 2. Save the old Instruction Pointer to the stack.
+        let rsp = context.pointee.uc_mcontext.regs.15 /* REG_RSP */
+        if let ump = UnsafeMutablePointer<UInt64>(bitPattern: Int(rsp)) {
+            ump.pointee = rsp
+        }
 
-    // 3. Set the Instruction Pointer to the new function's address
-    var f: @convention(c) () -> Void = callThreadExit
-    withUnsafePointer(to: &f) {    $0.withMemoryRebound(to: Int64.self, capacity: 1) { ptr in
-        context.pointee.uc_mcontext.gregs.16 /* REG_RIP */ = ptr.pointee
-    } }
+        // 3. Set the Instruction Pointer to the new function's address
+        var f: @convention(c) () -> Void = callThreadExit
+        withUnsafePointer(to: &f) {    $0.withMemoryRebound(to: UInt64.self, capacity: 1) { ptr in
+            context.pointee.uc_mcontext.regs.16 /* REG_RIP */ = ptr.pointee
+        } }
+    #else
+        // 1. Decrement the stack pointer
+        context.pointee.uc_mcontext.gregs.15 /* REG_RSP */ -= Int64(MemoryLayout<Int>.size)
+
+        // 2. Save the old Instruction Pointer to the stack.
+        let rsp = context.pointee.uc_mcontext.gregs.15 /* REG_RSP */
+        if let ump = UnsafeMutablePointer<Int64>(bitPattern: Int(rsp)) {
+            ump.pointee = rsp
+        }
+
+        // 3. Set the Instruction Pointer to the new function's address
+        var f: @convention(c) () -> Void = callThreadExit
+        withUnsafePointer(to: &f) {    $0.withMemoryRebound(to: Int64.self, capacity: 1) { ptr in
+            context.pointee.uc_mcontext.gregs.16 /* REG_RIP */ = ptr.pointee
+        } }
+    #endif
 }
 
 /// Without Mach exceptions or the Objective-C runtime, there's nothing to put in the exception object. It's really just a boolean – either a SIGILL was caught or not.
